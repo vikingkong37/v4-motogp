@@ -2189,6 +2189,11 @@ const fmt = (n) => String(Math.round(n / 100) * 100).replace(/\B(?=(\d{3})+(?!\d
 
 let theta = 337, rpm = 13000, target = 13000;
 let frame = 0, last = 0, visible = false, touring = !still.matches, clock = 0, idle = 0;
+// Reduced motion keeps the engine still until the reader asks for it: a click or Space starts it.
+let override = false;
+const calm = () => still.matches && !override;
+const hint = document.querySelector("[data-corner=\"hint\"]");
+const say = () => { if (hint && still.matches) hint.textContent = override ? "Cliquez pour arrêter · survolez : régime" : "Cliquez pour lancer le moteur"; };
 const tourAt = (t) => 13250 - 5250 * Math.cos((t / 14) * Math.PI * 2);
 
 function draw() {
@@ -2228,10 +2233,10 @@ function tick(now) {
   const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 1 / 60;
   last = now;
   if (touring) { clock += dt; target = tourAt(clock); }
-  rpm = still.matches ? target : rpm + (target - rpm) * (1 - Math.exp(-dt / 0.5));
-  if (!still.matches) theta = (theta + (rpm / 60 / ENG.slow) * 360 * dt) % 720;
+  rpm = calm() ? target : rpm + (target - rpm) * (1 - Math.exp(-dt / 0.5));
+  if (!calm()) theta = (theta + (rpm / 60 / ENG.slow) * 360 * dt) % 720;
   draw();
-  frame = visible && !still.matches ? requestAnimationFrame(tick) : 0;
+  frame = visible && !calm() ? requestAnimationFrame(tick) : 0;
 }
 const run = () => { if (!frame && visible) { last = 0; frame = requestAnimationFrame(tick); } };
 const steer = (next) => {
@@ -2239,8 +2244,8 @@ const steer = (next) => {
   target = clamp(next, ENG.rpmMin, ENG.rpmMax);
   stage.setAttribute("aria-valuetext", `${fmt(target)} tours par minute`);
   clearTimeout(idle);
-  idle = setTimeout(() => { touring = !still.matches; clock = Math.acos(clamp((13250 - target) / 5250, -1, 1)) / (Math.PI * 2) * 14; run(); }, 3600);
-  if (still.matches) draw();
+  idle = setTimeout(() => { touring = !calm(); clock = Math.acos(clamp((13250 - target) / 5250, -1, 1)) / (Math.PI * 2) * 14; run(); }, 3600);
+  if (calm()) draw();
   run();
 };
 new IntersectionObserver((entries) => { visible = entries[entries.length - 1].isIntersecting; if (visible) run(); }, { rootMargin: "120px 0px" }).observe(stage);
@@ -2248,7 +2253,10 @@ stage.addEventListener("pointermove", (event) => {
   const box = svg.getBoundingClientRect();
   steer(ENG.rpmMin + clamp((event.clientX - box.left) / box.width, 0, 1) * (ENG.rpmMax - ENG.rpmMin));
 });
+const toggle = () => { if (!still.matches) return; override = !override; touring = override; clock = 0; say(); if (calm()) draw(); run(); };
+stage.addEventListener("click", toggle);
 stage.addEventListener("keydown", (event) => {
+  if (event.key === " " || event.key === "Enter") { event.preventDefault(); toggle(); return; }
   const step = event.shiftKey ? 2000 : 500;
   let to = null;
   if (event.key === "ArrowRight" || event.key === "ArrowUp") to = target + step;
@@ -2260,4 +2268,6 @@ stage.addEventListener("keydown", (event) => {
   steer(to);
 });
 draw();
+say();
+still.addEventListener?.("change", () => { touring = !calm(); say(); run(); });
 </script></body></html>
